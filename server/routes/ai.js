@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import Donation from '../models/Donation.js';
 import { requireAuth } from '../middleware/auth.js';
-import { analyzeFood, prioritize, chat, hoursLeft } from '../utils/ai.js';
+import { analyzeFood, prioritize, chat, hoursLeft, aiEnabled } from '../utils/ai.js';
 
 const router = Router();
+
+// quick check that the Groq key is loaded: GET /api/ai/status
+router.get('/status', (_req, res) => res.json({ provider: 'groq', live: aiEnabled() }));
 
 router.post('/analyze', requireAuth(), async (req, res) => {
   const text = String(req.body.text ?? '').trim();

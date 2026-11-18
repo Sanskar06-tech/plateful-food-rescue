@@ -1,27 +1,41 @@
-import Anthropic from '@anthropic-ai/sdk';
-
 export const CATS = ['Cooked meal', 'Bakery', 'Dairy', 'Fresh produce', 'Packaged / other'];
 const PRI = ['High', 'Medium', 'Low'];
-const MODEL = process.env.AI_MODEL || 'claude-sonnet-4-6';
-let client;
-const getClient = () => {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  client ??= new Anthropic();
-  return client;
-};
+
+// All AI features use Groq (OpenAI-compatible API). Key comes from server/.env
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODEL = () => process.env.AI_MODEL || 'llama-3.3-70b-versatile';
+export const aiEnabled = () => !!process.env.GROQ_API_KEY;
 
 async function ask(system, messages, max = 500) {
-  const c = getClient();
-  if (!c) return null;
+  const key = process.env.GROQ_API_KEY;
+  if (!key) return null;
   try {
-    const r = await c.messages.create({ model: MODEL, max_tokens: max, system, messages });
-    return r.content.map((b) => b.text || '').join('');
+    const res = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.trim()}` },
+      body: JSON.stringify({
+        model: MODEL(),
+        max_tokens: max,
+        temperature: 0.3,
+        messages: [{ role: 'system', content: system }, ...messages],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+    return data.choices?.[0]?.message?.content ?? null;
   } catch (e) {
     console.error('AI error:', e.message);
     return null;
   }
 }
-const parse = (t) => { try { return JSON.parse(t.replace(/```json|```/g, '').trim()); } catch { return null; } };
+
+// pull the first JSON object/array out of the reply, even if the model adds extra words
+const parse = (t) => {
+  try {
+    const m = t.replace(/```json|```/g, '').match(/[\[{][\s\S]*[\]}]/);
+    return m ? JSON.parse(m[0]) : null;
+  } catch { return null; }
+};
 
 // hours until the food is unsafe OR the pickup window closes, whichever is sooner
 export const hoursLeft = (d) => {
@@ -94,5 +108,5 @@ export async function chat(messages) {
     'You are Plateful Helper, a friendly assistant on a food donation website. Help with how to donate, how NGOs claim food, and basic food-safety advice. ' +
     'Keep answers under 80 words. If unsure about safety, advise discarding the food.',
     messages.slice(-10), 300);
-  return out || 'I am offline right now. General tip: keep cooked food covered, deliver within 4 hours, and when in doubt, do not donate it.';
+  return out || 'The AI service is not reachable right now (check GROQ_API_KEY in server/.env). General tip: keep cooked food covered, deliver within 4 hours, and when in doubt, do not donate it.';
 }
